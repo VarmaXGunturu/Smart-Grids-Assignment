@@ -1,6 +1,6 @@
 function variable = DG(DieselGenerator, price, type)
     variable = 0;
-     
+    
     if type == 'response'
         variable = response(DieselGenerator, price);
     end
@@ -19,10 +19,10 @@ variable = [ones(1,15).*linspace(0,DieselGenerator.P_max,15)];              % Cr
 end 
 
 function variable = response(DieselGenerator, price)
-    
-    P_max = DieselGenerator.DG_Bidcurve(ceil(price));                           % Determine upper interpolation price
-    P_min = DieselGenerator.DG_Bidcurve(floor(price));                          % Determine lower interpolation price
-    
-    variable = P_max - (P_max-P_min)*(ceil(price)-price);                       % Interpolate power generation diesel generator based on price and bidcurve
+
+P_max = DieselGenerator.DG_Bidcurve(ceil(price));                           % Determine upper interpolation price
+P_min = DieselGenerator.DG_Bidcurve(floor(price));                          % Determine lower interpolation price
+
+variable = P_max - (P_max-P_min)*(ceil(price)-price);                       % Interpolate power generation diesel generator based on price and bidcurve
 
 end

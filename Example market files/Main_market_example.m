@@ -1,6 +1,6 @@
 clear all; close all;
 
-scenario = 'summer';                                                        % Define scenario setting ('summer'/'winter')
+scenario = 'winter';                                                        % Define scenario setting ('summer'/'winter')
 %% Loading of all required data
 if scenario == 'summer'
     load summer_data.mat;                                                   %Loading the data of households (EV,PV,Batt,Baseload)
@@ -15,12 +15,12 @@ data = cell2mat(data);                                                      %Con
 load Grid_generation.mat;                                                   %Loading the data of the grid generation (Diesel Generator in example)
 % WindTurbine can be modified with create_turbine.m
 % Rename your Wind Turbine to a power rating
-load WindTurbine200.mat;                                                       %Loading the data of the wind generation 
+load WindTurbine750.mat;                                                       %Loading the data of the wind generation 
 
 %Initialize Scenario
 sim_length          = 768;                                                  %Define simulation length (768 = 96 + 672 = 1 week in 15 minute intervals with initialisation day for simulation)
 number_of_houses    = 100;                                                  %Number of houses in simulation
-percentages_ders    = [0.8,1,1,1];                                    %Percentages of DERs in simulation as in data it is 100% on all. Order: [PV,EV,Batt,HP]
+percentages_ders    = [0.8,0.5,0.5,0.3];                                    %Percentages of DERs in simulation as in data it is 100% on all. Order: [PV,EV,Batt,HP]
 total_consumption = zeros(1,sim_length);                                    %Predefine variable to store total consumption
 price = 0;                                                                  %Predefine price variable 
 
@@ -34,8 +34,8 @@ V_corr =  v_wind.*log(Hub_height/z0)/log(Ref_height/z0);                    % Co
 % We use a case study from Alliander
 % 'https://www.hieropgewekt.nl/uploads/inline/Buurtbatterij-A-neighbourhood-battery-and-its-impact-on-the-Energy-Transition-Report.pdf'
 % 3 times a batterypack with 140kWh and 125kW capacity
-battery.Batt_Size = 140*3; % [kWh]
-battery.Batt_Power_Max = 125*3; % [kW]
+battery.Batt_Size = 140*5; % [kWh]
+battery.Batt_Power_Max = 125*5; % [kW]
 battery.Batt_Energy = 0; % Energy in battery
 battery.Batt_SoC = zeros(1,sim_length); % State of charge
 battery.Batt_Actual = zeros(1,sim_length);
@@ -139,13 +139,6 @@ for i = 1:sim_length                                                        % Ac
         end
     end
     
-    % If the demand bidcurve is lower than the generation bidcurve
-    % remove the wind turbine from the market and let the battery be
-    % charged.
-%     if max(combined_bidcurve) < min(generation_bidcurve)
-%         generation_bidcurve            = combined_bidcurve;
-%     end
-    
     %% Local Marginal Pricing Market/PowerMatcher
     % plot matching of the combined generation and demand bidcurves
     plot(combined_bidcurve)
@@ -159,14 +152,7 @@ for i = 1:sim_length                                                        % Ac
 
     pause(0.01);                                                            % Comment this line to not show price matching plot for every timestep
     
-     % If the demand bidcurve is lower than the generation bidcurve set the
-     % price to 1
-     if max(combined_bidcurve) > min(generation_bidcurve)
-        [xi,yi] = polyxpoly(combined_bidcurve,linspace(1,15,15),generation_bidcurve,linspace(1,15,15)); % Determine price per timestep
-     end
-     if max(combined_bidcurve) <= min(generation_bidcurve)
-         yi(1) = 1;
-     end
+    [xi,yi] = polyxpoly(combined_bidcurve,linspace(1,15,15),generation_bidcurve,linspace(1,15,15)); % Determine price per timestep
     price = yi(1);                                                                                  % Save price for timestep
     time_price (i) = price;                                                                         % Save price for all timesteps
 
@@ -198,15 +184,7 @@ end
 
 %% Calculate energy and fuel cost
 
-E = sum(DieselGenerator.DG_Actual)*15/60; % calculate energy cost [kWh]
-
-cost_E = 0.25*E/100; % the price one household should approximately pay for a week from the grid
-
-% Fuel costs (really general approximations)
-L_kWh = 0.145; % [Liter/kWh Diesel]
-Diesel = E*L_kWh; % amount of Diesel needed per week [L]
-Price_diesel = 1.59; % [Euros/L]
-cost_Diesel = Diesel*Price_diesel/100; % cost of diesel per household [Euros]
+[cost_Diesel, cost_E] = cost(DieselGenerator.DG_Actual);
 
 %% Plot results
 
