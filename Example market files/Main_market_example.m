@@ -186,6 +186,13 @@ end
 
 [cost_Diesel, cost_E] = cost(DieselGenerator.DG_Actual);
 
+
+LCOE_wind = 0.036       % EUR/KWh 
+W = sum(abs(Power_wind))*15/60;
+cost_W = W*LCOE_wind/100;   % per Household
+total_cost_grid = cost_E + cost_W
+total_cost_islanded = cost_Diesel + cost_W
+
 %% Plot results
 
 % Show market prices for each timestep
