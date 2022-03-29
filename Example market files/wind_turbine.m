@@ -24,8 +24,16 @@ P = - WindTurbine.No_Turbines*interp1(WindTurbine.Powercurve.Windspeed_ms,WindTu
 if isnan(P)
     P=0;
 end
-d= zeros(1,15);
-for(i=1:15)             % Create (price independent) wind turbine bidcurve 
+
+threshold = 2; % create a ramp up for the wind
+
+P_line = ones(1,threshold).*linspace(0,P,threshold);
+
+d = zeros(1,15);
+for i = 1:threshold
+    d(i) = P_line(i);
+end
+for(i=threshold:15)             % Create (price independent) wind turbine bidcurve 
     d(i) = P;            
 end
 
