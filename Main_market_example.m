@@ -20,7 +20,7 @@ load WindTurbine200.mat;                                                       %
 %Initialize Scenario
 sim_length          = 768;                                                  %Define simulation length (768 = 96 + 672 = 1 week in 15 minute intervals with initialisation day for simulation)
 number_of_houses    = 100;                                                  %Number of houses in simulation
-percentages_ders    = [0.8,1,1,1];                                    %Percentages of DERs in simulation as in data it is 100% on all. Order: [PV,EV,Batt,HP]
+percentages_ders    = [1,1,1,1];                                    %Percentages of DERs in simulation as in data it is 100% on all. Order: [PV,EV,Batt,HP]
 total_consumption = zeros(1,sim_length);                                    %Predefine variable to store total consumption
 price = 0;                                                                  %Predefine price variable 
 
@@ -34,12 +34,16 @@ V_corr =  v_wind.*log(Hub_height/z0)/log(Ref_height/z0);                    % Co
 % We use a case study from Alliander
 % 'https://www.hieropgewekt.nl/uploads/inline/Buurtbatterij-A-neighbourhood-battery-and-its-impact-on-the-Energy-Transition-Report.pdf'
 % 3 times a batterypack with 140kWh and 125kW capacity
-battery.Batt_Size = 140*3; % [kWh]
-battery.Batt_Power_Max = 125*3; % [kW]
+battery.Batt_Size = 140*5; % [kWh]
+battery.Batt_Power_Max = 125*5; % [kW]
 battery.Batt_Energy = 0; % Energy in battery
 battery.Batt_SoC = zeros(1,sim_length); % State of charge
 battery.Batt_Actual = zeros(1,sim_length);
 battery.Batt_Bidcurve = 0;
+
+Power_wind = zeros(1,sim_length);
+Supply_actual = zeros(1,sim_length);
+DieselGenerator.DG_Actual = zeros(1,sim_length);
 
 rng(2)                                                                      %Set Random Seed, everything will be distributed randomly, but the same for every run
 distribution_pv     = randperm(number_of_houses,int8(number_of_houses*percentages_ders(1)));        %Create random distribution of PV
@@ -127,7 +131,7 @@ for i = 1:sim_length                                                        % Ac
     % Determine bidcurve for supply from grid provided by a diesel generator
     DieselGenerator.DG_Bidcurve    = DG(DieselGenerator, price, 'bidcurve');   % Create and save diesel generator bidcurve
     WindTurbine.Bidcurve = wind_turbine(i,v_wind(i),WindTurbine, 'bidcurve');   % Create and save wind generator bidcurve
-%     generation_bidcurve            = DieselGenerator.DG_Bidcurve - WindTurbine.Bidcurve;
+
     generation_bidcurve = zeros(1,15);
 
     for j = 1:15
@@ -138,13 +142,6 @@ for i = 1:sim_length                                                        % Ac
             generation_bidcurve(j) = -WindTurbine.Bidcurve(j)+DieselGenerator.DG_Bidcurve(j);
         end
     end
-    
-    % If the demand bidcurve is lower than the generation bidcurve
-    % remove the wind turbine from the market and let the battery be
-    % charged.
-%     if max(combined_bidcurve) < min(generation_bidcurve)
-%         generation_bidcurve            = combined_bidcurve;
-%     end
     
     %% Local Marginal Pricing Market/PowerMatcher
     % plot matching of the combined generation and demand bidcurves
@@ -159,16 +156,9 @@ for i = 1:sim_length                                                        % Ac
 
     pause(0.01);                                                            % Comment this line to not show price matching plot for every timestep
     
-     % If the demand bidcurve is lower than the generation bidcurve set the
-     % price to 1
-     if max(combined_bidcurve) > min(generation_bidcurve)
-        [xi,yi] = polyxpoly(combined_bidcurve,linspace(1,15,15),generation_bidcurve,linspace(1,15,15)); % Determine price per timestep
-     end
-     if max(combined_bidcurve) <= min(generation_bidcurve)
-         yi(1) = 1;
-     end
+    [xi,yi] = polyxpoly(combined_bidcurve,linspace(1,15,15),generation_bidcurve,linspace(1,15,15)); % Determine price per timestep
     price = yi(1);                                                                                  % Save price for timestep
-    time_price(i) = price;                                                                         % Save price for all timesteps
+    time_price (i) = price;                                                                         % Save price for all timesteps
 
     %% Response to Market Result
     for k = 1:number_of_houses                                              % Loop through each house individually
@@ -186,32 +176,30 @@ for i = 1:sim_length                                                        % Ac
     end
     
     % Receive actual power supply from grid (Diesel generator in example)
-    DieselGenerator.DG_Actual(i)  = DG(DieselGenerator, price,'response');
+    
     Power_wind(i) = wind_turbine(i,v_wind(i),WindTurbine, 'response');
+    if total_consumption(i) <= -Power_wind(i)
+        Power_wind(i) = -total_consumption(i);
+    end
     
-    Supply_actual(i) = DieselGenerator.DG_Actual(i) + Power_wind(i); % Add all grid generation responses
+    if total_consumption(i) > -Power_wind(i)
+        DieselGenerator.DG_Actual(i)  = total_consumption(i) + Power_wind(i);
+    end
     
-    battery = Battery_wind(battery,Supply_actual(i),i,'reference'); % calculate the energy of the battery
+    Supply_actual(i) = DieselGenerator.DG_Actual(i) + abs(Power_wind(i)); % Add all grid generation responses
     
-    Supply_actual(i) = Supply_actual(i) + battery.Batt_Actual(i); % recalculate the actual supply needed by adding the battery
 end
 
 %% Calculate energy and fuel cost
 
-E = sum(DieselGenerator.DG_Actual)*15/60; % calculate energy cost [kWh]
-% source: https://www.irena.org/-/media/Files/IRENA/Agency/Publication/2021/Jun/IRENA_Power_Generation_Costs_2020.pdf
-LCOE_wind = 0.036       % EUR/KWh 
+[cost_Diesel, cost_E] = cost(DieselGenerator.DG_Actual);
+
+LCOE_wind = 0.036;       % EUR/KWh 
 W = sum(abs(Power_wind))*15/60;
 cost_W = W*LCOE_wind/100;   % per Household
-GE = sum(total_consumption)*15/60;
-cost_E = 0.143*GE/100; % the price one household should approximately pay for a week from the grid
+total_cost_grid = cost_E + cost_W;
+total_cost_islanded = cost_Diesel + cost_W;
 
-% Fuel costs (really general approximations)
-L_kWh = 0.145; % [Liter/kWh Diesel]
-Diesel = E*L_kWh; % amount of Diesel needed per week [L]
-Price_diesel = 1.59; % [Euros/L]
-cost_Diesel = Diesel*Price_diesel/100; % cost of diesel per household [Euros]
-total_cost = cost_Diesel + cost_W
 %% Plot results
 
 % Show market prices for each timestep
@@ -225,6 +213,8 @@ ylabel('Market Price')
 figure
 hold on
 plot(Supply_actual,'b')
+plot(-Power_wind, 'g')
+plot(DieselGenerator.DG_Actual, 'r')
 grid on
 yline(160, 'r');                                                            % Red line indicates the power limit of the assumed transformer
 xlim([96 768]);  
@@ -232,10 +222,11 @@ xlim([96 768]);
 xlabel('Time Step [15min]') 
 ylabel('Power [kW]') 
 axis([96 786 -150 200])
+legend({'Consumption', 'Wind', 'Diesel'})
 if scenario == 'summer'
-    title ('Power flow through transformer - Summer')
+    title ('Power flow - Summer')
 elseif scenario == 'winter'
-    title ('Power flow through transformer - Winter') 
+    title ('Power flow - Winter') 
 end
 
 % Show plot for one of the houses to show behavior of DER loads
